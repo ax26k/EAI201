@@ -1,0 +1,47 @@
+Vacuum Cleaner Shapes and Advantages:
+1. Circular  - Moves smoothly around furniture and tight spaces.
+2. Square    - Cleans edges and walls more effectively.
+3. Triangle  - Reaches corners better than other shapes.
+4. Hexagon   - Covers large open areas efficiently in honeycomb pattern.
+
+Enter the number of the shape you want (1/2/3/4): 4
+
+You chose: Hexagon Vacuum Cleaner
+
+Type commands: start, stop, left, right, dock
+Type 'exit' to quit.
+
+Enter command: start
+Hexagon vacuum started cleaning.
+Enter command: right
+Hexagon vacuum moved right.
+Enter command: up
+Oops , choose an option from the given options.
+Enter command: down
+Oops , choose an option from the given options.
+Enter command: dock
+Hexagon vacuum returned to dock.
+Enter command: exit
+ Your room is cleaned! 
+
+Vacuum Cleaner Shapes and Advantages:
+1. Circular  - Moves smoothly around furniture and tight spaces.
+2. Square    - Cleans edges and walls more effectively.
+3. Triangle  - Reaches corners better than other shapes.
+4. Hexagon   - Covers large open areas efficiently in honeycomb pattern.
+
+Enter the number of the shape you want (1/2/3/4): 2
+
+You chose: Square Vacuum Cleaner
+
+Type commands: start, stop, left, right, dock
+Type 'exit' to quit.
+
+Enter command: start
+Square vacuum started cleaning.
+Enter command: left
+Square vacuum moved left.
+Enter command: dock
+Square vacuum returned to dock.
+Enter command: exit
+ Your room is cleaned! 
