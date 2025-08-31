@@ -1,0 +1,41 @@
+ AI Grading Assistant 
+Type 'done' when finished.
+
+Enter subject (or 'done' to stop): AI & ML
+Enter marks: 89
+AI & ML -> B+ : Good, can do better 
+
+Enter subject (or 'done' to stop): 95
+Invalid subject! Subject name cannot be numbers.
+
+Enter subject (or 'done' to stop): Engineering Mathematics III
+Enter marks: 94
+Engineering Mathematics III -> A : Good 
+
+Enter subject (or 'done' to stop): English
+Enter marks: 99
+English -> A+ : Excellent 
+
+Enter subject (or 'done' to stop): done
+Final Grade: A : Student is doing good, more efforts and you will be in topper's list
+
+ AI Grading Assistant 
+Type 'done' when finished.
+
+Enter subject (or 'done' to stop): SST
+Enter marks: 34
+SST -> W : Needs to appear again, consider withdrawing 
+
+Enter subject (or 'done' to stop): 90
+Invalid subject! Subject name cannot be numbers.
+
+Enter subject (or 'done' to stop): Hindi
+Enter marks: 12
+Hindi -> W : Needs to appear again, consider withdrawing 
+
+Enter subject (or 'done' to stop): Biology
+Enter marks: 8
+Biology -> W : Needs to appear again, consider withdrawing 
+
+Enter subject (or 'done' to stop): done
+Final Grade: W : Needs to appear again, consider withdrawing
