@@ -1,1 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Campus Mate - Navigator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  body { font-family: 'Inter', sans-serif; background: #f3f4f6; }
+  #map { height: 450px; border-radius: 12px; }
+  .leaflet-container { border-radius: 12px; }
+  .panel { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+  .chat-bubble { padding: 10px 14px; border-radius: 18px; max-width: 75%; display: inline-block; margin-bottom: 8px; }
+  .user-bubble { background: #4f46e5; color: white; border-bottom-right-radius: 0; }
+  .bot-bubble { background: #e5e7eb; color: #111827; border-bottom-left-radius: 0; }
+  #chatBox { height: 280px; overflow-y: auto; padding: 8px; background: #f9fafb; border-radius: 12px; }
+  #chatInput { border-radius: 8px; border: 1px solid #d1d5db; padding: 10px; width: 100%; }
+  #sendChat { background: #10b981; color: white; font-weight: 600; border-radius: 8px; padding: 10px; transition: 0.3s; }
+  #sendChat:hover { background: #059669; }
+  select:focus, input:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,0.2); }
+</style>
+</head>
+<body>
+<div class="container mx-auto py-6 px-4">
+<h1 class="text-3xl font-bold text-center text-gray-800 mb-8">Campus Mate - Your Campus Navigator</h1>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="panel">
+    <h2 class="text-xl font-semibold mb-4 text-gray-700">Find Your Path</h2>
+    <div class="space-y-4">
+      <div>
+        <label for="start" class="block text-gray-600 mb-1 font-medium">Start Location:</label>
+        <select id="start" class="w-full p-2 border rounded-lg"></select>
+      </div>
+      <div>
+        <label for="end" class="block text-gray-600 mb-1 font-medium">End Location:</label>
+        <select id="end" class="w-full p-2 border rounded-lg"></select>
+      </div>
+      <div>
+        <label for="algorithm" class="block text-gray-600 mb-1 font-medium">Algorithm:</label>
+        <select id="algorithm" class="w-full p-2 border rounded-lg">
+          <option value="">Select Algorithm</option>
+          <option value="BFS">BFS</option>
+          <option value="DFS">DFS</option>
+          <option value="UCS">UCS</option>
+          <option value="A*">A*</option>
+        </select>
+      </div>
+      <button id="findPath" class="w-full bg-indigo-600 text-white font-semibold hover:bg-indigo-700 rounded-lg p-2">Find Path</button>
+    </div>
+    <div id="results" class="mt-6 hidden">
+      <h3 class="text-lg font-semibold mb-3 text-gray-700">Path Details</h3>
+      <div id="pathDetails" class="space-y-2 text-gray-800"></div>
+    </div>
+  </div>
+
+  <div class="space-y-6">
+    <div class="panel">
+      <h2 class="text-xl font-semibold mb-4 text-gray-700">Campus Map</h2>
+      <div id="map"></div>
+    </div>
+
+    <div class="panel">
+      <h2 class="text-xl font-semibold mb-4 text-gray-700">Chat with Campus Mate</h2>
+      <div id="chatBox"></div>
+      <div class="mt-2 flex space-x-2">
+        <input id="chatInput" type="text" placeholder="Ask me anything..." />
+        <button id="sendChat">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ---------------------------
+   Data: locations, coords, graph
+   --------------------------- */
+let map, markers = {}, polyline = null;
+
+// list of locations (same names as used before)
+const campusLocations = [
+  "Main Gate","Admin Block","Cafe","Library","Auditorium",
+  "Academic Block B","Food Court","Laundry","Faculty Hostel",
+  "Hostel","Sports Complex","Football Ground","Cricket Ground",
+  "Basketball Court","Volleyball Court","Tennis Court"
+];
+
+// lat, lon coords (same as before)
+const coords = {
+  'Main Gate':[13.2213517,77.7551040],'Admin Block':[13.2221039,77.7551951],
+  'Cafe':[13.2222655,77.7551286],'Library':[13.2220964,77.7554430],
+  'Auditorium':[13.2222219,77.7552483],'Academic Block B':[13.2232977,77.7559360],
+  'Food Court':[13.2248993,77.7571096],'Laundry':[13.2245360,77.7571372],
+  'Faculty Hostel':[13.2236718,77.7571935],'Hostel':[13.2244538,77.7591013],
+  'Sports Complex':[13.2281226,77.7577549],'Football Ground':[13.2280384,77.7563453],
+  'Cricket Ground':[13.2284361,77.7575469],'Basketball Court':[13.2287872,77.7581721],
+  'Volleyball Court':[13.2286880,77.7585798],'Tennis Court':[13.2284498,77.7583519]
+};
+
+// adjacency list (bidirectional). Edges are 'logical paths' on campus.
+const adjacency = {
+  'Main Gate': ['Admin Block','Academic Block B','Sports Complex'],
+  'Admin Block': ['Main Gate','Academic Block B','Auditorium','Library'],
+  'Academic Block B': ['Main Gate','Admin Block','Cafe','Library','Food Court'],
+  'Cafe': ['Academic Block B','Library'],
+  'Library': ['Cafe','Admin Block','Academic Block B','Auditorium'],
+  'Auditorium': ['Admin Block','Library'],
+  'Food Court': ['Academic Block B','Laundry','Hostel'],
+  'Laundry': ['Food Court','Faculty Hostel'],
+  'Faculty Hostel': ['Laundry','Hostel'],
+  'Hostel': ['Faculty Hostel','Food Court'],
+  'Sports Complex': ['Football Ground','Cricket Ground','Basketball Court','Main Gate'],
+  'Football Ground': ['Sports Complex'],
+  'Cricket Ground': ['Sports Complex'],
+  'Basketball Court': ['Sports Complex','Volleyball Court','Tennis Court'],
+  'Volleyball Court': ['Basketball Court','Tennis Court'],
+  'Tennis Court': ['Basketball Court','Volleyball Court']
+};
+
+/* ---------------------------
+   Utility: distance (meters)
+   --------------------------- */
+function haversineMeters(lat1, lon1, lat2, lon2){
+  const R = 6371000; // meters
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(toRad(lat1))*Math.cos(toRad(lat2)) *
+            Math.sin(dLon/2)*Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+function distBetween(a,b){
+  if(!coords[a] || !coords[b]) return Infinity;
+  const [la,lo] = coords[a];
+  const [lb,lo2] = coords[b];
+  return haversineMeters(la,lo,lb,lo2);
+}
+
+/* ---------------------------
+   Map init, markers, dropdowns
+   --------------------------- */
+function initMap(){
+  map = L.map('map').setView([13.2213517,77.7551040],15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:19,
+    attribution:'&copy; OpenStreetMap contributors'
+  }).addTo(map);
+}
+
+function addLocationMarkers(){
+  campusLocations.forEach(l=>{
+    if(coords[l]){
+      markers[l] = L.marker(coords[l]).addTo(map).bindPopup(l);
+    }
+  });
+}
+
+function populateDropdowns(){
+  const startSel = document.getElementById("start");
+  const endSel = document.getElementById("end");
+  // clear existing
+  startSel.innerHTML = "";
+  endSel.innerHTML = "";
+  campusLocations.forEach(l=>{
+    startSel.appendChild(new Option(l,l));
+    endSel.appendChild(new Option(l,l));
+  });
+}
+
+/* ---------------------------
+   Pathfinding algorithms
+   return {path, steps, distance}
+   --------------------------- */
+
+// Reconstruct path using parent map
+function reconstructPath(parent, start, goal){
+  const path = [];
+  let node = goal;
+  while(node !== undefined){
+    path.push(node);
+    if(node === start) break;
+    node = parent[node];
+  }
+  return path.reverse();
+}
+
+// BFS (shortest by number of edges)
+function bfs(start, goal){
+  const q = [start];
+  const visited = new Set([start]);
+  const parent = {};
+  const steps = [];
+  while(q.length){
+    const node = q.shift();
+    steps.push(node);
+    if(node === goal) return {path: reconstructPath(parent,start,goal), steps};
+    const neighbors = adjacency[node] || [];
+    for(const n of neighbors){
+      if(!visited.has(n)){
+        visited.add(n);
+        parent[n] = node;
+        q.push(n);
+      }
+    }
+  }
+  return null;
+}
+
+// DFS (depth-first, not guaranteed shortest)
+function dfs(start, goal){
+  const stack = [start];
+  const visited = new Set();
+  const parent = {};
+  const steps = [];
+  while(stack.length){
+    const node = stack.pop();
+    if(visited.has(node)) continue;
+    visited.add(node);
+    steps.push(node);
+    if(node === goal) return {path: reconstructPath(parent,start,goal), steps};
+    const neighbors = adjacency[node] || [];
+    // push neighbors in reverse order to keep some consistent order
+    for(let i = neighbors.length-1; i >= 0; i--){
+      const n = neighbors[i];
+      if(!visited.has(n)){
+        parent[n] = node;
+        stack.push(n);
+      }
+    }
+  }
+  return null;
+}
+
+// UCS (Dijkstra) - shortest path by distance
+function ucs(start, goal){
+  const dist = {};
+  const parent = {};
+  const visited = new Set();
+  const steps = [];
+  campusLocations.forEach(n => dist[n] = Infinity);
+  dist[start] = 0;
+  let pq = [{node:start, cost:0}];
+  while(pq.length){
+    // pop smallest
+    pq.sort((a,b)=>a.cost-b.cost);
+    const {node, cost} = pq.shift();
+    if(visited.has(node)) continue;
+    visited.add(node);
+    steps.push(node);
+    if(node === goal) return {path: reconstructPath(parent,start,goal), steps, distance: dist[goal]};
+    const neighbors = adjacency[node] || [];
+    for(const n of neighbors){
+      const alt = dist[node] + distBetween(node,n);
+      if(alt < dist[n]){
+        dist[n] = alt;
+        parent[n] = node;
+        pq.push({node:n, cost:dist[n]});
+      }
+    }
+  }
+  return null;
+}
+
+// A* with heuristic = straight-line distance to goal
+function astar(start, goal){
+  const g = {}; // cost so far
+  const f = {}; // estimated total
+  const parent = {};
+  const open = [];
+  const closed = new Set();
+  const steps = [];
+  campusLocations.forEach(n => { g[n] = Infinity; f[n] = Infinity; });
+  g[start] = 0;
+  f[start] = distBetween(start,goal);
+  open.push({node:start, f:f[start]});
+  while(open.length){
+    open.sort((a,b)=>a.f-b.f);
+    const {node} = open.shift();
+    if(closed.has(node)) continue;
+    closed.add(node);
+    steps.push(node);
+    if(node === goal) return {path: reconstructPath(parent,start,goal), steps, distance: g[goal]};
+    const neighbors = adjacency[node] || [];
+    for(const n of neighbors){
+      if(closed.has(n)) continue;
+      const tentative_g = g[node] + distBetween(node,n);
+      if(tentative_g < g[n]){
+        parent[n] = node;
+        g[n] = tentative_g;
+        f[n] = g[n] + distBetween(n,goal);
+        open.push({node:n, f:f[n]});
+      }
+    }
+  }
+  return null;
+}
+
+/* ---------------------------
+   Helper wrapper to compute path + distance + time
+   --------------------------- */
+function computePath(start, goal, algo){
+  if(!campusLocations.includes(start) || !campusLocations.includes(goal)) {
+    return {error: "Unknown start or end location."};
+  }
+  if(start === goal) {
+    return {path:[start], steps:[start], distance:0, walking_time:0};
+  }
+  let result = null;
+  if(algo === "BFS") result = bfs(start,goal);
+  else if(algo === "DFS") result = dfs(start,goal);
+  else if(algo === "UCS") result = ucs(start,goal);
+  else if(algo === "A*") result = astar(start,goal);
+  else return {error: "Unknown algorithm."};
+
+  if(!result) return {error: "No path found."};
+
+  // ensure distance is computed: if algorithm returned distance use it; otherwise sum edges
+  let distance = 0;
+  const path = result.path;
+  for(let i=0;i<path.length-1;i++){
+    distance += distBetween(path[i], path[i+1]);
+  }
+  const walking_time = (distance/80).toFixed(1); // keep your previous speed conversion
+  return {path, steps: result.steps || [], distance: Math.round(distance), walking_time};
+}
+
+/* ---------------------------
+   Chatbot utilities: flexible parsing
+   --------------------------- */
+function addMessage(sender, msg){
+  const chatBox = document.getElementById("chatBox");
+  const div = document.createElement("div");
+  div.className = sender === "user" ? "text-right" : "text-left";
+  const bubble = document.createElement("span");
+  bubble.className = "chat-bubble " + (sender === "user" ? "user-bubble" : "bot-bubble");
+  bubble.innerHTML = msg;
+  div.appendChild(bubble);
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// find campus locations that appear in the text (in order of appearance)
+function findLocationsInText(text){
+  const lower = text.toLowerCase();
+  const found = [];
+  campusLocations.forEach(loc=>{
+    const l = loc.toLowerCase();
+    const idx = lower.indexOf(l);
+    if(idx !== -1) found.push({loc, idx});
+  });
+  found.sort((a,b)=>a.idx-b.idx);
+  return found.map(x=>x.loc);
+}
+
+// try to match a free text fragment to a campus location (fuzzy-ish)
+function matchLocationFragment(fragment){
+  if(!fragment) return null;
+  const f = fragment.trim().toLowerCase();
+  // exact
+  for(const loc of campusLocations) if(loc.toLowerCase() === f) return loc;
+  // contains / partial
+  for(const loc of campusLocations) if(loc.toLowerCase().includes(f) || f.includes(loc.toLowerCase())) return loc;
+  // starts with
+  for(const loc of campusLocations) if(loc.toLowerCase().startsWith(f) || f.startsWith(loc.toLowerCase().slice(0,4))) return loc;
+  return null;
+}
+
+/* ---------------------------
+   UI interactions
+   --------------------------- */
+document.getElementById("findPath").addEventListener("click", ()=>{
+  const start = document.getElementById("start").value;
+  const end = document.getElementById("end").value;
+  const algo = document.getElementById("algorithm").value;
+  const results = document.getElementById("results");
+  const pathDetails = document.getElementById("pathDetails");
+
+  if(!start||!end||!algo){ alert("Select all fields!"); return; }
+
+  const data = computePath(start,end,algo);
+  if(data.error){
+    pathDetails.innerHTML = `<p class="text-red-600">${data.error}</p>`;
+    results.classList.remove("hidden");
+    return;
+  }
+
+  pathDetails.innerHTML = `
+    <p><strong>Algorithm:</strong> ${algo}</p>
+    <p><strong>Steps visited (order):</strong></p>
+    <ul>${data.steps.map(s=>`<li>${s}</li>`).join("")}</ul>
+    <p><strong>Path:</strong> ${data.path.join(" -> ")}</p>
+    <p><strong>Distance:</strong> ${data.distance} m</p>
+    <p><strong>Walking Time:</strong> ${data.walking_time} min</p>
+  `;
+  results.classList.remove("hidden");
+
+  // draw polyline
+  if(polyline) map.removeLayer(polyline);
+  const pathCoords = data.path.map(p=> markers[p] ? markers[p]._latlng : null ).filter(c=>c);
+  if(pathCoords.length>0){
+    polyline = L.polyline(pathCoords, {color:'#4f46e5', weight:5}).addTo(map);
+    map.fitBounds(polyline.getBounds(), {padding: [40,40]});
+  }
+});
+
+/* ---------------------------
+   Chatbot main behavior
+   --------------------------- */
+document.getElementById("sendChat").addEventListener("click", handleChatSend);
+document.getElementById("chatInput").addEventListener("keypress", (e)=>{ if(e.key === "Enter") handleChatSend(); });
+
+function handleChatSend(){
+  const inputEl = document.getElementById("chatInput");
+  const inputRaw = inputEl.value.trim();
+  if(!inputRaw) return;
+  addMessage("user", inputRaw);
+  inputEl.value = "";
+
+  const input = inputRaw.toLowerCase();
+
+  // 1) If user asks "find path" or includes two location names, try to compute path
+  let response = "Sorry, I didn't understand that. Try: 'Find path from Library to Cafe' or type 'help'.";
+  const locsFound = findLocationsInText(inputRaw);
+  // Try regex "from X to Y"
+  const regex = inputRaw.match(/from\s+(.+?)\s+to\s+(.+?)(?:[?.!]|$)/i);
+  if(regex){
+    const startFrag = regex[1].trim();
+    const endFrag = regex[2].trim();
+    const startMatch = matchLocationFragment(startFrag);
+    const endMatch = matchLocationFragment(endFrag);
+    if(startMatch && endMatch){
+      const algo = document.getElementById("algorithm").value || "A*"; // default to A* if not selected
+      const data = computePath(startMatch, endMatch, algo);
+      if(data.error) response = data.error;
+      else {
+        response = `Path from ${startMatch} to ${endMatch} using ${algo}: ${data.path.join(" -> ")}. Distance: ${data.distance} m, Time: ${data.walking_time} min.`;
+        // draw path
+        if(polyline) map.removeLayer(polyline);
+        const pathCoords = data.path.map(p=> markers[p] ? markers[p]._latlng : null ).filter(c=>c);
+        if(pathCoords.length>0){ polyline = L.polyline(pathCoords, {color:'#4f46e5', weight:5}).addTo(map); map.fitBounds(polyline.getBounds(), {padding:[40,40]}); }
+      }
+      setTimeout(()=>addMessage("bot",response),350);
+      return;
+    } else {
+      response = "I understood a 'from ... to ...' pattern but couldn't match the place names. Try using the exact location names visible in the dropdowns.";
+      setTimeout(()=>addMessage("bot",response),350);
+      return;
+    }
+  }
+
+  // If two location names found anywhere in sentence, use their order of appearance
+  if(locsFound.length >= 2){
+    const start = locsFound[0], end = locsFound[1];
+    const algo = document.getElementById("algorithm").value || "A*";
+    const data = computePath(start, end, algo);
+    if(data.error) response = data.error;
+    else {
+      response = `Path from ${start} to ${end} using ${algo}: ${data.path.join(" -> ")}. Distance: ${data.distance} m, Time: ${data.walking_time} min.`;
+      if(polyline) map.removeLayer(polyline);
+      const pathCoords = data.path.map(p=> markers[p] ? markers[p]._latlng : null ).filter(c=>c);
+      if(pathCoords.length>0){ polyline = L.polyline(pathCoords, {color:'#4f46e5', weight:5}).addTo(map); map.fitBounds(polyline.getBounds(), {padding:[40,40]}); }
+    }
+    setTimeout(()=>addMessage("bot",response),350);
+    return;
+  }
+
+  // 2) If user says they are stuck at a location: "stuck at X" or "I'm stuck at X"
+  if(input.includes("stuck") || input.includes("stuck at") || input.includes("i am stuck") || input.includes("i'm stuck")){
+    // try to find one location in text
+    if(locsFound.length >= 1){
+      const current = locsFound[0];
+      // suggest nearest other location
+      let best = null, bestDist = Infinity;
+      campusLocations.forEach(loc=>{
+        if(loc === current) return;
+        const d = distBetween(current, loc);
+        if(d < bestDist){ bestDist = d; best = loc; }
+      });
+      if(best){
+        response = `You are at ${current}. You could head to ${best}. Need directions? Say: 'Find path from ${current} to ${best}'.`;
+      } else {
+        response = `You're at ${current} — I couldn't find another location to suggest.`;
+      }
+      setTimeout(()=>addMessage("bot", response),350);
+      return;
+    } else {
+      response = "Tell me where you're stuck, e.g., 'I am stuck at Library' so I can suggest where to go next.";
+      setTimeout(()=>addMessage("bot", response),350);
+      return;
+    }
+  }
+
+  // 3) Basic greetings & help
+  if(input.includes("hello") || input.includes("hi")){
+    response = "Hello!  I can help you find routes on campus. Try: 'Find path from Main Gate to Library', or say 'I'm stuck at Cafe'.";
+    setTimeout(()=>addMessage("bot", response),350);
+    return;
+  }
+  if(input.includes("help")){
+    response = "To get directions say: 'Find path from [start] to [end]'. You can also say 'I'm stuck at [location]' and I'll suggest where to go.";
+    setTimeout(()=>addMessage("bot", response),350);
+    return;
+  }
+
+  // 4) fallback: couldn't interpret
+  setTimeout(()=>addMessage("bot",response),350);
+}
+
+/* ---------------------------
+   Start: init UI + message
+   --------------------------- */
+initMap();
+addLocationMarkers();
+populateDropdowns();
+
+// instruction message printed in chat on load
+addMessage("bot",
+  "Hi! I can help you navigate the campus.<br>"+
+  " Ask: <b>Find path from [start] to [end]</b> (e.g., <i>Find path from Main Gate to Library</i>).<br>"+
+  "Or say: <b>I'm stuck at [location]</b> and I'll suggest where to go next."
+);
+</script>
+</body>
+</html>
 
