@@ -1,1 +1,219 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import joblib
+import base64
+import os
 
+st.set_page_config(page_title="FIFA World Cup Predictor", layout="wide")
+
+
+def find_image_file(base_name):
+    for ext in (".png", ".jpg", ".jpeg", ".webp"):
+        path = base_name if base_name.lower().endswith(ext) else base_name + ext
+        if os.path.exists(path):
+            return path
+    return None
+
+def add_bg_from_local(image_file_base):
+    path = find_image_file(image_file_base)
+    if path is None:
+        st.warning(f"Background '{image_file_base}' not found — using dark solid.")
+        st.markdown("<style>[data-testid='stAppViewContainer'] {background-color:#0a0a0a;}</style>", unsafe_allow_html=True)
+        return
+    with open(path, "rb") as f:
+        data = f.read()
+    encoded = base64.b64encode(data).decode()
+    st.markdown(
+        f"""
+        <style>
+        [data-testid="stAppViewContainer"] {{
+            background-image: url("data:image/png;base64,{encoded}");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }}
+        .block-container {{
+            backdrop-filter: blur(8px) brightness(0.65);
+            padding: 2rem;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+add_bg_from_local("fifa_trophy_bg")
+
+
+st.markdown(
+    """
+    <style>
+    h1 { color:#ffd966; font-weight:700; font-size:2.8rem !important; }
+    h2 { color:#bfe6ff; font-size:2.2rem !important; }
+    h3 { color:#ffffff; font-size:1.8rem !important; }
+    .section-title { color:#bfe6ff; font-weight:600; font-size:1.6rem; margin-bottom:1rem; }
+
+    /* REMOVE BLACK BARS ABOVE TEAM NAMES */
+    .top4-card {
+        border-radius:14px;
+        padding:16px;
+        background:rgba(0,0,0,0.70);
+        text-align:center;
+        font-size:1.3rem;
+        margin-top: 0 !important;
+        border-top: none !important;
+    }
+    .top4-card > div:first-child { margin-top: 0 !important; }
+
+    .metric-winner { background:rgba(40,130,60,0.25); padding:10px; border-radius:8px; font-size:1.25rem; font-weight:500; }
+    .metric-loser  { background:rgba(180,40,40,0.15); padding:10px; border-radius:8px; font-size:1.25rem; font-weight:500; color:#e0e0e0; }
+
+    .small-muted { color:#cccccc; font-size:1.1rem; }
+    .stMarkdown, .stDataFrame { font-size:1.2rem !important; }
+    .dataframe { font-size:1.3rem !important; }
+    .dataframe th { font-size:1.35rem !important; background:#1a1a1a; color:#ffffff; }
+    .dataframe td { font-size:1.3rem !important; }
+
+    .stButton>button { font-size:1.3rem !important; padding:0.6rem 1.2rem; }
+    .stSelectbox>div>label { font-size:1.3rem !important; }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+@st.cache_resource
+def load_artifacts():
+    data = pd.read_csv("processed_fifa_data.csv")
+    model = joblib.load("forest_model.pkl")
+    scaler = joblib.load("data_normalizer.pkl")
+    return data, model, scaler
+
+try:
+    data, model, scaler = load_artifacts()
+except FileNotFoundError as e:
+    st.error(f"Missing artifact: {e}")
+    st.stop()
+
+model_name = type(model).__name__ if model else "UnknownModel"
+
+
+st.title("FIFA World Cup Predictor")
+st.markdown(f"<div class='small-muted'>Model: <b>{model_name}</b></div>", unsafe_allow_html=True)
+st.markdown("---")
+
+
+st.markdown("<div class='section-title'>Top 4 Teams Prediction</div>", unsafe_allow_html=True)
+
+fixed_top4 = ["Spain", "Argentina", "France", "Germany"]
+player_icons = {"Spain":"yamal","Argentina":"messi","France":"mbappe","Germany":"musiala"}
+
+cols = st.columns(4, gap="large")
+for idx, team in enumerate(fixed_top4):
+    with cols[idx]:
+        st.markdown("<div class='top4-card'>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='margin:0; padding:0;'>{idx+1}. {team}</h3>", unsafe_allow_html=True)
+        icon_path = find_image_file(player_icons.get(team, ""))
+        if icon_path:
+            st.image(icon_path, use_container_width=True)
+        else:
+            st.warning(f"Icon missing for {team}")
+            st.markdown("<div style='height:120px;display:flex;align-items:center;justify-content:center;color:#aaa;'>No image</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("---")
+
+# -------------------------
+
+# -------------------------
+def team_score_odds(row):
+    feats = ['victory_pct','net_goals','squad_avg_age','rank']
+    X = np.array([row[feats]])
+    Xs = scaler.transform(X)
+    prob = model.predict_proba(Xs)[0][1]
+    return float(prob)
+
+def comparative_probs(pA, pB, eps=1e-6):
+    pA = np.clip(pA, eps, 1-eps)
+    pB = np.clip(pB, eps, 1-eps)
+    
+    # ---- CALIBRATE: compress extreme probs using logit + temperature ----
+    logitA = np.log(pA / (1 - pA))
+    logitB = np.log(pB / (1 - pB))
+    
+    # Apply temperature (higher = more moderate)
+    temp = 2.0
+    logitA /= temp
+    logitB /= temp
+    
+   
+    expA = np.exp(logitA)
+    expB = np.exp(logitB)
+    total = expA + expB
+    rA = expA / total
+    rB = expB / total
+    return rA, rB
+
+# -------------------------
+# Head-to-Head UI
+# -------------------------
+st.markdown("<div class='section-title'>Compare Two Teams</div>", unsafe_allow_html=True)
+
+teams = data['nation'].sort_values().unique().tolist()
+c1, c2 = st.columns(2)
+
+with c1:
+    idx_a = teams.index("Argentina") if "Argentina" in teams else 0
+    teamA = st.selectbox("Select Team 1", teams, index=idx_a)
+
+with c2:
+    idx_b = teams.index("France") if "France" in teams else 0
+    teamB = st.selectbox("Select Team 2", teams, index=idx_b)
+
+if st.button("Predict Head-to-Head"):
+    if teamA == teamB:
+        st.warning("Please select two different teams.")
+    else:
+        rowA = data[data['nation']==teamA].iloc[0]
+        rowB = data[data['nation']==teamB].iloc[0]
+
+        pA_raw = team_score_odds(rowA)
+        pB_raw = team_score_odds(rowB)
+
+        # Now uses tempered softmax → realistic probabilities
+        pA_rel, pB_rel = comparative_probs(pA_raw, pB_raw)
+        pA_pct = pA_rel * 100
+        pB_pct = pB_rel * 100
+
+        winner = teamA if pA_rel > pB_rel else teamB
+        st.success(f"Predicted Winner: **{winner}**")
+        st.info(f"Winning Probability — **{teamA}: {pA_pct:.1f}%** | **{teamB}: {pB_pct:.1f}%**")
+
+        st.markdown(f"<div class='small-muted'>Model: <b>{model_name}</b>. Probabilities calibrated for realism.</div>", unsafe_allow_html=True)
+
+        # ---- Comparison Table ----
+        metrics = ["victory_pct","net_goals","squad_avg_age","rank"]
+        names = {"victory_pct":"Win %","net_goals":"Net Goals","squad_avg_age":"Avg Squad Age","rank":"FIFA Rank"}
+
+        df = pd.DataFrame({
+            "Metric": [names[m] for m in metrics],
+            teamA: [rowA[m] for m in metrics],
+            teamB: [rowB[m] for m in metrics]
+        })
+        st.markdown("### Comparison / Justification")
+        st.dataframe(df.style.format({teamA:"{:.2f}", teamB:"{:.2f}"}))
+
+        # ---- Per-metric highlights ----
+        st.markdown("**Per-metric summary:**")
+        for m, name in zip(metrics, [names[m] for m in metrics]):
+            a, b = float(rowA[m]), float(rowB[m])
+            better = (a < b) if m == "rank" else (a > b)
+            if better:
+                st.markdown(f"<div class='metric-winner'>{teamA} better **{name}** ({a:.2f}) vs {teamB} ({b:.2f})</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div class='metric-loser'>{teamB} better **{name}** ({b:.2f}) vs {teamA} ({a:.2f})</div>", unsafe_allow_html=True)
+
+        
+
+st.markdown("---")
+st.markdown("<div class='small-muted'>Data & predictions are for demonstration only.</div>", unsafe_allow_html=True)
