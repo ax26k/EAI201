@@ -1,6 +1,4 @@
-# --------------------------------------------------------------
-# ZOO EXAM – ALL 3 TASKS – FULLY WORKING – NO ERRORS
-# --------------------------------------------------------------
+
 
 import pandas as pd
 import json
@@ -254,4 +252,5 @@ if __name__ == "__main__":
     exam = ZooExam()
     exam.Delta_load_and_integrate()
     exam.Delta_eda_and_cleaning()
+
     exam.Delta_train_and_evaluate()
